@@ -12,6 +12,8 @@ It uses:
 
 - All training data was taken from Hugging Face and transformed using `transform.py` compiled using `collate.py`
 
+- 1 Epoch of Trainig
+
 > NOTE
 > I did not filter the data in any way (hindsight is 20/20 so shaddup) when I probably should've.
 > By filtering I also mean modifying and creating multiple ways to say the same thing which probably has a better effect on model learning.
