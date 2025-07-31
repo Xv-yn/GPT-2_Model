@@ -3,7 +3,6 @@ import json
 import os
 import re
 import time
-import torch_directml
 
 from functools import partial
 from bpe_openai_gpt2 import get_encoder
@@ -13,7 +12,7 @@ from gpt2model import GPTModel, load_weights_into_gpt, train_model_simple
 
 
 NUM_WORKERS = 0
-BATCH_SIZE = 8
+BATCH_SIZE = 1
 
 BASE_CONFIG = {
     "vocab_size": 50257,  # Vocabulary size
@@ -23,7 +22,7 @@ BASE_CONFIG = {
 }
 
 CHOOSE_MODEL = "gpt2-small (124M)"
-NUM_EPOCHS = 3
+NUM_EPOCHS = 1
 
 # Looks for the file data.json in the current directory
 file_path = "./finetuning_data/combined_medical_data.jsonl"
@@ -90,7 +89,7 @@ def custom_collate_fn(
     return inputs_tensor, targets_tensor
 
 
-device = torch_directml.device()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print(device)
 
