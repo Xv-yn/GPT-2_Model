@@ -3,11 +3,11 @@ import json
 import os
 import re
 import time
+import torch_directml
 
 from functools import partial
 from bpe_openai_gpt2 import get_encoder
-from data import InstructionDataset
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader
 from gpt_download import download_and_load_gpt2
 from gpt2model import GPTModel, load_weights_into_gpt, train_model_simple
 
@@ -23,28 +23,39 @@ BASE_CONFIG = {
 }
 
 CHOOSE_MODEL = "gpt2-small (124M)"
-NUM_EPOCHS = 2
+NUM_EPOCHS = 3
 
 # Looks for the file data.json in the current directory
-file_path = "./finetuning_data/greetings.json"
+file_path = "./finetuning_data/combined_medical_data.jsonl"
+
+
+class InstructionDataset(Dataset):
+    def __init__(self, data, tokenizer):
+        self.data = data
+
+        # Pre-tokenize texts
+        self.encoded_texts = []
+        for entry in data:
+            formatted_entry = format_input(entry)
+            self.encoded_texts.append(tokenizer.encode(formatted_entry))
+
+    def __getitem__(self, index):
+        return self.encoded_texts[index]
+
+    def __len__(self):
+        return len(self.data)
 
 
 def format_input(entry):
-    input_text = (
-        f"### input:\n{entry['input']}\n"
-        f"### output:\n{entry['output']}\n"
-    )
+    input_text = f"### input:\n{entry['input']}\n" f"### output:\n{entry['output']}\n"
     return input_text
 
+
 def custom_collate_fn(
-    batch,
-    pad_token_id=50256,
-    ignore_index=-100,
-    allowed_max_length=None,
-    device="cpu"
+    batch, pad_token_id=50256, ignore_index=-100, allowed_max_length=None, device="cpu"
 ):
     # Find the longest sequence in the batch
-    batch_max_length = max(len(item)+1 for item in batch)
+    batch_max_length = max(len(item) + 1 for item in batch)
 
     # Pad and prepare inputs and targets
     inputs_lst, targets_lst = [], []
@@ -54,10 +65,7 @@ def custom_collate_fn(
         # Add an <|endoftext|> token
         new_item += [pad_token_id]
         # Pad sequences to max_length
-        padded = (
-            new_item + [pad_token_id] *
-            (batch_max_length - len(new_item))
-        )
+        padded = new_item + [pad_token_id] * (batch_max_length - len(new_item))
         inputs = torch.tensor(padded[:-1])  # Truncate the last token for inputs
         targets = torch.tensor(padded[1:])  # Shift +1 to the right for targets
 
@@ -81,19 +89,17 @@ def custom_collate_fn(
 
     return inputs_tensor, targets_tensor
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-elif torch.backends.mps.is_available():
-    device = torch.device("mps")
-else:
-    device = torch.device("cpu")
+device = torch_directml.device()
+
+print(device)
 
 tokenizer = get_encoder(model_name="gpt2_tokenizer", models_dir=".")
 
+data = []
 with open(file_path, "r", encoding="utf-8") as file:
-    data = json.load(file)
+    for line in file:
+        data.append(json.loads(line))
 
 train_portion = int(len(data) * 0.85)  # 85% for training
 test_portion = int(len(data) * 0.1)  # 10% for testing
@@ -106,6 +112,8 @@ val_data = data[train_portion + test_portion :]
 customized_collate_fn = partial(
     custom_collate_fn, device=device, allowed_max_length=1024
 )
+
+print("Setting Up Data")
 
 train_dataset = InstructionDataset(train_data, tokenizer)
 train_loader = DataLoader(
@@ -150,6 +158,9 @@ model_size = CHOOSE_MODEL.split(" ")[-1].lstrip("(").rstrip(")")
 settings, params = download_and_load_gpt2(model_size=model_size, models_dir="gpt2")
 
 model = GPTModel(BASE_CONFIG)
+
+print("Loading Weights")
+
 load_weights_into_gpt(model, params)
 model.eval()
 
@@ -161,6 +172,7 @@ torch.manual_seed(123)
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=0.00005, weight_decay=0.1)
 
+print("Training Model")
 train_losses, val_losses, tokens_seen = train_model_simple(
     model,
     train_loader,

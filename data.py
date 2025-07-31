@@ -51,19 +51,3 @@ def create_dataloader_v1(
     )
 
     return dataloader
-
-class InstructionDataset(Dataset):
-    def __init__(self, data, tokenizer):
-        self.data = data
-
-        # Pre-tokenize texts
-        self.encoded_texts = []
-        for entry in data:
-            formatted_entry = format_input(entry)
-            self.encoded_texts.append(tokenizer.encode(formatted_entry))
-
-    def __getitem__(self, index):
-        return self.encoded_texts[index]
-
-    def __len__(self):
-        return len(self.data)
